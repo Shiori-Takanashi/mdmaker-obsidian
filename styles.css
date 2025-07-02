@@ -54,3 +54,61 @@
 .mdmaker-cancel-button:hover {
     background-color: var(--background-modifier-hover);
 }
+
+/* MD Maker Settings Styles */
+
+.setting-separator {
+    margin: 20px 0;
+    border: none;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.mdmaker-settings-section {
+    margin: 20px 0;
+}
+
+.mdmaker-quick-create {
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 16px;
+}
+
+.mdmaker-quick-create h3 {
+    margin-top: 0;
+    margin-bottom: 8px;
+    color: var(--text-accent);
+}
+
+.mdmaker-quick-create p {
+    margin-bottom: 12px;
+    color: var(--text-muted);
+    font-size: 0.9em;
+    line-height: 1.4;
+}
+
+.mdmaker-create-button-settings {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+
+.mdmaker-create-button-settings:hover {
+    background-color: var(--interactive-accent-hover);
+}
+
+.mdmaker-button-description {
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background-color: var(--background-primary-alt);
+    border-radius: 4px;
+    font-size: 0.9em;
+    color: var(--text-muted);
+}

@@ -30,7 +30,8 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var DEFAULT_SETTINGS = {
   defaultFileCount: 5,
-  defaultBaseName: "\u30D5\u30A1\u30A4\u30EB"
+  defaultBaseName: "\u30D5\u30A1\u30A4\u30EB",
+  targetFolder: "/"
 };
 var MDMakerPlugin = class extends import_obsidian.Plugin {
   async onload() {
@@ -99,10 +100,16 @@ var MDMakerModal = class extends import_obsidian.Modal {
     this.baseName = plugin.settings.defaultBaseName;
     this.fileCount = plugin.settings.defaultFileCount;
     try {
-      this.selectedFolder = this.app.vault.getRoot();
+      const targetFolderPath = plugin.settings.targetFolder || "/";
+      if (targetFolderPath === "/") {
+        this.selectedFolder = this.app.vault.getRoot();
+      } else {
+        const folder = this.app.vault.getAbstractFileByPath(targetFolderPath);
+        this.selectedFolder = folder instanceof import_obsidian.TFolder ? folder : this.app.vault.getRoot();
+      }
     } catch (error) {
-      console.error("\u30EB\u30FC\u30C8\u30D5\u30A9\u30EB\u30C0\u306E\u53D6\u5F97\u306B\u5931\u6557:", error);
-      this.selectedFolder = null;
+      console.error("\u30BF\u30FC\u30B2\u30C3\u30C8\u30D5\u30A9\u30EB\u30C0\u306E\u53D6\u5F97\u306B\u5931\u6557:", error);
+      this.selectedFolder = this.app.vault.getRoot();
     }
   }
   onOpen() {
@@ -277,5 +284,81 @@ var MDMakerSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       }
     }));
+    new import_obsidian.Setting(containerEl).setName("\u30C7\u30D5\u30A9\u30EB\u30C8\u306E\u4F5C\u6210\u5148\u30D5\u30A9\u30EB\u30C0").setDesc("\u30D5\u30A1\u30A4\u30EB\u3092\u4F5C\u6210\u3059\u308B\u30C7\u30D5\u30A9\u30EB\u30C8\u30D5\u30A9\u30EB\u30C0\u3092\u9078\u629E\u3057\u307E\u3059").addDropdown(async (dropdown) => {
+      await this.populateFolderDropdown(dropdown);
+    });
+    containerEl.createEl("hr", { cls: "setting-separator" });
+    const quickCreateSection = containerEl.createDiv({ cls: "mdmaker-quick-create" });
+    quickCreateSection.createEl("h3", { text: "\u30AF\u30A4\u30C3\u30AF\u4F5C\u6210" });
+    quickCreateSection.createEl("p", {
+      text: "\u8A2D\u5B9A\u3055\u308C\u305F\u5024\u3067\u5373\u5EA7\u306B\u30D5\u30A1\u30A4\u30EB\u3092\u4F5C\u6210\u3067\u304D\u307E\u3059\u3002\u8A73\u7D30\u306A\u8A2D\u5B9A\u304C\u5FC5\u8981\u306A\u5834\u5408\u306F\u3001\u30EA\u30DC\u30F3\u30A2\u30A4\u30B3\u30F3\u307E\u305F\u306F\u30B3\u30DE\u30F3\u30C9\u30D1\u30EC\u30C3\u30C8\u304B\u3089\u300CMD Maker\u3092\u958B\u304F\u300D\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
+    });
+    const buttonDescription = quickCreateSection.createDiv({ cls: "mdmaker-button-description" });
+    buttonDescription.textContent = `\u300C${this.plugin.settings.defaultBaseName}\u300D\u3092${this.plugin.settings.defaultFileCount}\u500B\u4F5C\u6210\u3057\u307E\u3059`;
+    const buttonContainer = quickCreateSection.createDiv();
+    buttonContainer.style.display = "flex";
+    buttonContainer.style.justifyContent = "center";
+    buttonContainer.style.marginTop = "10px";
+    const createButton = buttonContainer.createEl("button", {
+      text: "\u4ECA\u3059\u3050\u4F5C\u6210",
+      cls: "mdmaker-create-button-settings"
+    });
+    createButton.addEventListener("click", async () => {
+      await this.quickCreateFiles();
+    });
+  }
+  async populateFolderDropdown(dropdown) {
+    try {
+      dropdown.addOption("/", "\u30EB\u30FC\u30C8 (/)");
+      const allFiles = this.app.vault.getAllLoadedFiles();
+      const folders = allFiles.filter((file) => file instanceof import_obsidian.TFolder).map((folder) => folder).sort((a, b) => a.path.localeCompare(b.path));
+      folders.forEach((folder) => {
+        if (folder.path !== "/" && folder.path !== "") {
+          dropdown.addOption(folder.path, folder.path);
+        }
+      });
+      dropdown.setValue(this.plugin.settings.targetFolder);
+      dropdown.onChange(async (value) => {
+        this.plugin.settings.targetFolder = value;
+        await this.plugin.saveSettings();
+        this.display();
+      });
+    } catch (error) {
+      console.error("\u30D5\u30A9\u30EB\u30C0\u30C9\u30ED\u30C3\u30D7\u30C0\u30A6\u30F3\u306E\u4F5C\u6210\u30A8\u30E9\u30FC:", error);
+      dropdown.addOption("/", "\u30EB\u30FC\u30C8 (/)");
+      dropdown.setValue("/");
+    }
+  }
+  async quickCreateFiles() {
+    try {
+      let targetFolder;
+      const targetPath = this.plugin.settings.targetFolder;
+      if (targetPath === "/") {
+        targetFolder = this.app.vault.getRoot();
+      } else {
+        const folder = this.app.vault.getAbstractFileByPath(targetPath);
+        if (folder instanceof import_obsidian.TFolder) {
+          targetFolder = folder;
+        } else {
+          new import_obsidian.Notice("\u6307\u5B9A\u3055\u308C\u305F\u30D5\u30A9\u30EB\u30C0\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u30EB\u30FC\u30C8\u30D5\u30A9\u30EB\u30C0\u306B\u4F5C\u6210\u3057\u307E\u3059\u3002");
+          targetFolder = this.app.vault.getRoot();
+        }
+      }
+      const result = await this.plugin.createFiles(
+        targetFolder,
+        this.plugin.settings.defaultBaseName,
+        this.plugin.settings.defaultFileCount
+      );
+      if (result.created.length > 0) {
+        new import_obsidian.Notice(`${result.created.length}\u500B\u306E\u30D5\u30A1\u30A4\u30EB\u3092\u4F5C\u6210\u3057\u307E\u3057\u305F`);
+      }
+      if (result.failed.length > 0) {
+        new import_obsidian.Notice(`${result.failed.length}\u500B\u306E\u30D5\u30A1\u30A4\u30EB\u306E\u4F5C\u6210\u306B\u5931\u6557\u3057\u307E\u3057\u305F`);
+        console.warn("\u4F5C\u6210\u306B\u5931\u6557\u3057\u305F\u30D5\u30A1\u30A4\u30EB:", result.failed);
+      }
+    } catch (error) {
+      new import_obsidian.Notice("\u30D5\u30A1\u30A4\u30EB\u4F5C\u6210\u4E2D\u306B\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F");
+      console.error("Quick file creation error:", error);
+    }
   }
 };

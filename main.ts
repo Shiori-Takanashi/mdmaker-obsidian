@@ -3,11 +3,13 @@ import { App, Plugin, PluginSettingTab, Setting, Modal, TFolder, TFile, Notice }
 interface MDMakerSettings {
     defaultFileCount: number;
     defaultBaseName: string;
+    targetFolder: string;
 }
 
 const DEFAULT_SETTINGS: MDMakerSettings = {
     defaultFileCount: 5,
-    defaultBaseName: 'ファイル'
+    defaultBaseName: 'ファイル',
+    targetFolder: '/'
 }
 
 export default class MDMakerPlugin extends Plugin {
@@ -106,10 +108,16 @@ class MDMakerModal extends Modal {
 
         // selectedFolderの初期化を安全に行う
         try {
-            this.selectedFolder = this.app.vault.getRoot();
+            const targetFolderPath = plugin.settings.targetFolder || '/';
+            if (targetFolderPath === '/') {
+                this.selectedFolder = this.app.vault.getRoot();
+            } else {
+                const folder = this.app.vault.getAbstractFileByPath(targetFolderPath) as TFolder;
+                this.selectedFolder = folder instanceof TFolder ? folder : this.app.vault.getRoot();
+            }
         } catch (error) {
-            console.error('ルートフォルダの取得に失敗:', error);
-            this.selectedFolder = null as any; // 一時的にnullを設定
+            console.error('ターゲットフォルダの取得に失敗:', error);
+            this.selectedFolder = this.app.vault.getRoot();
         }
     }
 
@@ -350,6 +358,7 @@ class MDMakerSettingTab extends PluginSettingTab {
 
         containerEl.createEl('h2', { text: 'MD Maker 設定' });
 
+        // デフォルトのベース名設定
         new Setting(containerEl)
             .setName('デフォルトのベース名')
             .setDesc('ファイル作成時のデフォルトのベース名')
@@ -361,6 +370,7 @@ class MDMakerSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        // デフォルトのファイル数設定
         new Setting(containerEl)
             .setName('デフォルトのファイル数')
             .setDesc('ファイル作成時のデフォルトのファイル数')
@@ -374,5 +384,119 @@ class MDMakerSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }
                 }));
+
+        // ターゲットフォルダ設定
+        new Setting(containerEl)
+            .setName('デフォルトの作成先フォルダ')
+            .setDesc('ファイルを作成するデフォルトフォルダを選択します')
+            .addDropdown(async (dropdown) => {
+                // フォルダ一覧を取得して追加
+                await this.populateFolderDropdown(dropdown);
+            });
+
+        // 区切り線
+        containerEl.createEl('hr', { cls: 'setting-separator' });
+
+        // クイック作成セクション
+        const quickCreateSection = containerEl.createDiv({ cls: 'mdmaker-quick-create' });
+        quickCreateSection.createEl('h3', { text: 'クイック作成' });
+        quickCreateSection.createEl('p', {
+            text: '設定された値で即座にファイルを作成できます。詳細な設定が必要な場合は、リボンアイコンまたはコマンドパレットから「MD Makerを開く」を選択してください。'
+        });
+
+        // 作成ボタンの設定
+        const buttonDescription = quickCreateSection.createDiv({ cls: 'mdmaker-button-description' });
+        buttonDescription.textContent = `「${this.plugin.settings.defaultBaseName}」を${this.plugin.settings.defaultFileCount}個作成します`;
+
+        const buttonContainer = quickCreateSection.createDiv();
+        buttonContainer.style.display = 'flex';
+        buttonContainer.style.justifyContent = 'center';
+        buttonContainer.style.marginTop = '10px';
+
+        const createButton = buttonContainer.createEl('button', {
+            text: '今すぐ作成',
+            cls: 'mdmaker-create-button-settings'
+        });
+        createButton.addEventListener('click', async () => {
+            await this.quickCreateFiles();
+        });
+    }
+
+    async populateFolderDropdown(dropdown: any) {
+        try {
+            // ルートフォルダを追加
+            dropdown.addOption('/', 'ルート (/)');
+
+            // 既存のフォルダを取得
+            const allFiles = this.app.vault.getAllLoadedFiles();
+            const folders = allFiles
+                .filter(file => file instanceof TFolder)
+                .map(folder => folder as TFolder)
+                .sort((a, b) => a.path.localeCompare(b.path));
+
+            // フォルダオプションを追加
+            folders.forEach(folder => {
+                if (folder.path !== '/' && folder.path !== '') {
+                    dropdown.addOption(folder.path, folder.path);
+                }
+            });
+
+            // 現在の設定値を選択
+            dropdown.setValue(this.plugin.settings.targetFolder);
+
+            // 変更時の処理
+            dropdown.onChange(async (value: string) => {
+                this.plugin.settings.targetFolder = value;
+                await this.plugin.saveSettings();
+                // ボタンの説明を更新
+                this.display();
+            });
+
+        } catch (error) {
+            console.error('フォルダドロップダウンの作成エラー:', error);
+            dropdown.addOption('/', 'ルート (/)');
+            dropdown.setValue('/');
+        }
+    }
+
+    async quickCreateFiles() {
+        try {
+            // ターゲットフォルダを取得
+            let targetFolder: TFolder;
+            const targetPath = this.plugin.settings.targetFolder;
+
+            if (targetPath === '/') {
+                targetFolder = this.app.vault.getRoot();
+            } else {
+                const folder = this.app.vault.getAbstractFileByPath(targetPath) as TFolder;
+                if (folder instanceof TFolder) {
+                    targetFolder = folder;
+                } else {
+                    new Notice('指定されたフォルダが見つかりません。ルートフォルダに作成します。');
+                    targetFolder = this.app.vault.getRoot();
+                }
+            }
+
+            // ファイル作成を実行
+            const result = await this.plugin.createFiles(
+                targetFolder,
+                this.plugin.settings.defaultBaseName,
+                this.plugin.settings.defaultFileCount
+            );
+
+            // 結果を通知
+            if (result.created.length > 0) {
+                new Notice(`${result.created.length}個のファイルを作成しました`);
+            }
+
+            if (result.failed.length > 0) {
+                new Notice(`${result.failed.length}個のファイルの作成に失敗しました`);
+                console.warn('作成に失敗したファイル:', result.failed);
+            }
+
+        } catch (error) {
+            new Notice('ファイル作成中にエラーが発生しました');
+            console.error('Quick file creation error:', error);
+        }
     }
 }
