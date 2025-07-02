@@ -31,63 +31,66 @@ var import_obsidian = require("obsidian");
 var DEFAULT_SETTINGS = {
   defaultFileCount: 5,
   defaultBaseName: "\u30D5\u30A1\u30A4\u30EB",
-  targetFolder: "/"
+  targetFolder: "/",
+  numberFormat: "\uFF08n\uFF09",
+  // デフォルトは全角括弧＋n
+  padWidth: 2
 };
 var MDMakerPlugin = class extends import_obsidian.Plugin {
   async onload() {
     await this.loadSettings();
-    const ribbonIconEl = this.addRibbonIcon("file-plus", "MD Maker", (evt) => {
+    this.addRibbonIcon("file-plus", "MD Maker", () => {
       new MDMakerModal(this.app, this).open();
     });
     this.addCommand({
       id: "open-mdmaker-modal",
       name: "MD Maker\u3092\u958B\u304F",
-      callback: () => {
-        new MDMakerModal(this.app, this).open();
-      }
+      callback: () => new MDMakerModal(this.app, this).open()
     });
     this.addSettingTab(new MDMakerSettingTab(this.app, this));
   }
   onunload() {
   }
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const loaded = await this.loadData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
   }
   async saveSettings() {
     await this.saveData(this.settings);
   }
-  /**
-   * 全角数字を半角数字に変換
-   */
   convertFullwidthToHalfwidth(text) {
-    const fullwidthDigits = "\uFF10\uFF11\uFF12\uFF13\uFF14\uFF15\uFF16\uFF17\uFF18\uFF19";
-    const halfwidthDigits = "0123456789";
-    let result = text;
-    for (let i = 0; i < fullwidthDigits.length; i++) {
-      result = result.replace(new RegExp(fullwidthDigits[i], "g"), halfwidthDigits[i]);
-    }
-    return result;
+    const full = "\uFF10\uFF11\uFF12\uFF13\uFF14\uFF15\uFF16\uFF17\uFF18\uFF19";
+    const half = "0123456789";
+    return text.replace(/[０-９]/g, (ch) => half[full.indexOf(ch)]);
   }
   /**
-   * ファイルを作成する
+   * rawFmt 中のすべての "n" を連番に置換し、
+   * "\n"（バックスラッシュ＋n）だけはリテラル "n" として扱います。
    */
+  formatSegment(rawFmt, pad, index) {
+    const ESC = "__LITERAL_N__";
+    let t = rawFmt.replace(/\\n/g, ESC);
+    const num = pad > 0 ? index.toString().padStart(pad, "0") : index.toString();
+    t = t.replace(/n/g, num);
+    return t.replace(new RegExp(ESC, "g"), "n");
+  }
   async createFiles(folder, baseName, count) {
-    const paddingWidth = count.toString().length;
+    const { numberFormat: rawFmt, padWidth: pad } = this.settings;
     const created = [];
     const failed = [];
     for (let i = 1; i <= count; i++) {
-      const fileName = `${baseName}(${i.toString().padStart(paddingWidth, "0")}).md`;
+      const seg = this.formatSegment(rawFmt, pad, i);
+      const fileName = `${baseName}${seg}.md`;
       const filePath = folder.path === "/" ? fileName : `${folder.path}/${fileName}`;
       try {
-        const existingFile = this.app.vault.getAbstractFileByPath(filePath);
-        if (existingFile) {
+        if (this.app.vault.getAbstractFileByPath(filePath)) {
           failed.push(`${fileName} (\u65E2\u306B\u5B58\u5728)`);
           continue;
         }
         await this.app.vault.create(filePath, "");
         created.push(fileName);
-      } catch (error) {
-        failed.push(`${fileName} (\u30A8\u30E9\u30FC: ${error.message})`);
+      } catch (e) {
+        failed.push(`${fileName} (\u30A8\u30E9\u30FC: ${e.message})`);
       }
     }
     return { created, failed };
@@ -99,169 +102,137 @@ var MDMakerModal = class extends import_obsidian.Modal {
     this.plugin = plugin;
     this.baseName = plugin.settings.defaultBaseName;
     this.fileCount = plugin.settings.defaultFileCount;
-    try {
-      const targetFolderPath = plugin.settings.targetFolder || "/";
-      if (targetFolderPath === "/") {
-        this.selectedFolder = this.app.vault.getRoot();
-      } else {
-        const folder = this.app.vault.getAbstractFileByPath(targetFolderPath);
-        this.selectedFolder = folder instanceof import_obsidian.TFolder ? folder : this.app.vault.getRoot();
-      }
-    } catch (error) {
-      console.error("\u30BF\u30FC\u30B2\u30C3\u30C8\u30D5\u30A9\u30EB\u30C0\u306E\u53D6\u5F97\u306B\u5931\u6557:", error);
-      this.selectedFolder = this.app.vault.getRoot();
-    }
+    this.numberFormat = plugin.settings.numberFormat;
+    this.padWidth = plugin.settings.padWidth;
+    const path = plugin.settings.targetFolder || "/";
+    const af = this.app.vault.getAbstractFileByPath(path);
+    this.selectedFolder = af instanceof import_obsidian.TFolder ? af : this.app.vault.getRoot();
   }
   onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.createEl("h2", { text: "MD Maker - \u8907\u6570\u30D5\u30A1\u30A4\u30EB\u4F5C\u6210" });
-    new import_obsidian.Setting(contentEl).setName("\u4F5C\u6210\u5148\u30D5\u30A9\u30EB\u30C0").setDesc("\u30D5\u30A1\u30A4\u30EB\u3092\u4F5C\u6210\u3059\u308B\u30D5\u30A9\u30EB\u30C0\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044").addDropdown((dropdown) => {
-      this.populateFolderDropdown(dropdown).catch((error) => {
-        console.error("\u30D5\u30A9\u30EB\u30C0\u30C9\u30ED\u30C3\u30D7\u30C0\u30A6\u30F3\u306E\u8A2D\u5B9A\u306B\u5931\u6557:", error);
-        dropdown.addOption("/", "\u30EB\u30FC\u30C8 (/)");
-        dropdown.setValue("/");
+    this.contentEl.empty();
+    this.contentEl.createEl("h2", { text: "MD Maker - \u8907\u6570\u30D5\u30A1\u30A4\u30EB\u4F5C\u6210" });
+    new import_obsidian.Setting(this.contentEl).setName("\u4F5C\u6210\u5148\u30D5\u30A9\u30EB\u30C0").setDesc("\u30D5\u30A1\u30A4\u30EB\u3092\u4F5C\u6210\u3059\u308B\u30D5\u30A9\u30EB\u30C0\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044").addDropdown((dd) => this.populateFolderDropdown(dd));
+    new import_obsidian.Setting(this.contentEl).setName("\u30D9\u30FC\u30B9\u540D").setDesc("\u30D5\u30A1\u30A4\u30EB\u540D\u306E\u30D9\u30FC\u30B9\u3092\u5165\u529B").addText((txt) => {
+      txt.setPlaceholder("\u4F8B: \u30E1\u30E2").setValue(this.baseName).onChange((v) => {
+        this.baseName = v;
       });
     });
-    new import_obsidian.Setting(contentEl).setName("\u30D5\u30A1\u30A4\u30EB\u306E\u30D9\u30FC\u30B9\u540D").setDesc("\u4F5C\u6210\u3059\u308B\u30D5\u30A1\u30A4\u30EB\u306E\u57FA\u672C\u540D\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044").addText((text) => text.setPlaceholder("\u4F8B: \u30E1\u30E2").setValue(this.baseName).onChange((value) => {
-      this.baseName = value;
-    }));
-    new import_obsidian.Setting(contentEl).setName("\u4F5C\u6210\u3059\u308B\u30D5\u30A1\u30A4\u30EB\u6570").setDesc("\u4F5C\u6210\u3059\u308B\u30D5\u30A1\u30A4\u30EB\u306E\u6570\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\uFF081-1000\uFF09").addText((text) => text.setPlaceholder("\u4F8B: 5").setValue(this.fileCount.toString()).onChange((value) => {
-      const converted = this.plugin.convertFullwidthToHalfwidth(value);
-      const num = parseInt(converted);
-      if (!isNaN(num) && num > 0 && num <= 1e3) {
-        this.fileCount = num;
-      }
-    }));
-    const previewDiv = contentEl.createDiv();
-    this.updatePreview(previewDiv);
-    const buttonDiv = contentEl.createDiv({ cls: "modal-button-container" });
-    buttonDiv.style.marginTop = "20px";
-    buttonDiv.style.display = "flex";
-    buttonDiv.style.gap = "10px";
-    const createButton = buttonDiv.createEl("button", { text: "\u4F5C\u6210" });
-    createButton.style.backgroundColor = "var(--interactive-accent)";
-    createButton.style.color = "var(--text-on-accent)";
-    createButton.addEventListener("click", async () => {
-      await this.createFiles();
+    new import_obsidian.Setting(this.contentEl).setName("\u30D5\u30A1\u30A4\u30EB\u6570").setDesc("1\u301C100 \u306E\u7BC4\u56F2\u3067\u5165\u529B").addText((txt) => {
+      txt.setPlaceholder("\u4F8B: 5").setValue(this.fileCount.toString()).onChange((v) => {
+        const n = parseInt(this.plugin.convertFullwidthToHalfwidth(v));
+        if (!isNaN(n) && n >= 1 && n <= 100) {
+          this.fileCount = n;
+        }
+      });
     });
-    const cancelButton = buttonDiv.createEl("button", { text: "\u30AD\u30E3\u30F3\u30BB\u30EB" });
-    cancelButton.addEventListener("click", () => {
-      this.close();
+    new import_obsidian.Setting(this.contentEl).setName("\u9023\u756A\u5F62\u5F0F").setDesc("`n` \u306F\u5FC5\u305A\u756A\u53F7\u306B\u3002`\\n` \u3067\u30EA\u30C6\u30E9\u30EB\u300Cn\u300D\u3092\u51FA\u529B").addText((txt) => {
+      txt.setPlaceholder(DEFAULT_SETTINGS.numberFormat).setValue(this.numberFormat).onChange((v) => {
+        this.numberFormat = v;
+      });
     });
-    const updatePreview = () => this.updatePreview(previewDiv);
-    contentEl.addEventListener("input", updatePreview);
+    new import_obsidian.Setting(this.contentEl).setName("\u30BC\u30ED\u30D1\u30C7\u30A3\u30F3\u30B0\u6841\u6570").setDesc("\u9023\u756A\u3092\u4F55\u6841\u3067\u30BC\u30ED\u30D1\u30C7\u30A3\u30F3\u30B0\u3059\u308B\u304B\uFF080\u306F\u306A\u3057\uFF09").addDropdown((dd) => {
+      ["0", "2", "3"].forEach((val) => {
+        dd.addOption(val, val === "0" ? "\u306A\u3057" : `${val}\u6841`);
+      });
+      dd.setValue(String(this.padWidth));
+      dd.onChange((v) => {
+        this.padWidth = parseInt(v);
+      });
+    });
+    const preview = this.contentEl.createDiv({ cls: "mdmaker-preview" });
+    this.updatePreview(preview);
+    this.contentEl.createEl("hr");
+    const btnWrp = this.contentEl.createDiv({ cls: "mdmaker-button-container" });
+    btnWrp.style.justifyContent = "flex-end";
+    const createBtn = btnWrp.createEl("button", {
+      text: "\u4E00\u62EC\u4F5C\u6210",
+      cls: "mdmaker-create-button"
+    });
+    createBtn.addEventListener("click", async () => {
+      this.plugin.settings.numberFormat = this.numberFormat;
+      this.plugin.settings.padWidth = this.padWidth;
+      await this.plugin.saveSettings();
+      await this.executeCreate();
+    });
+    const cancelBtn = btnWrp.createEl("button", {
+      text: "\u30AD\u30E3\u30F3\u30BB\u30EB",
+      cls: "mdmaker-cancel-button"
+    });
+    cancelBtn.addEventListener("click", () => this.close());
+    this.contentEl.addEventListener("input", () => this.updatePreview(preview));
   }
   updatePreview(container) {
     container.empty();
-    if (!this.baseName.trim() || this.fileCount <= 0) {
+    if (!this.baseName.trim() || this.fileCount < 1)
       return;
-    }
-    const previewTitle = container.createEl("h3", { text: "\u30D7\u30EC\u30D3\u30E5\u30FC" });
-    previewTitle.style.marginTop = "20px";
-    const paddingWidth = this.fileCount.toString().length;
-    const maxPreview = Math.min(this.fileCount, 5);
-    for (let i = 1; i <= maxPreview; i++) {
-      const fileName = `${this.baseName}(${i.toString().padStart(paddingWidth, "0")}).md`;
-      const fileDiv = container.createDiv();
-      fileDiv.style.fontFamily = "monospace";
-      fileDiv.style.fontSize = "0.9em";
-      fileDiv.style.padding = "2px 0";
-      fileDiv.textContent = fileName;
+    const max = Math.min(this.fileCount, 5);
+    for (let i = 1; i <= max; i++) {
+      const seg = this.plugin.formatSegment(this.numberFormat, this.padWidth, i);
+      const item = container.createDiv({ cls: "mdmaker-preview-item" });
+      item.textContent = `${this.baseName}${seg}.md`;
     }
     if (this.fileCount > 5) {
-      const moreDiv = container.createDiv();
-      moreDiv.style.fontStyle = "italic";
-      moreDiv.style.color = "var(--text-muted)";
-      moreDiv.textContent = `... \u3042\u3068${this.fileCount - 5}\u500B\u306E\u30D5\u30A1\u30A4\u30EB`;
+      const more = container.createDiv({ cls: "mdmaker-preview-item" });
+      more.style.fontStyle = "italic";
+      more.textContent = `...\u3042\u3068${this.fileCount - 5}\u500B`;
     }
   }
-  async createFiles() {
+  async executeCreate() {
     if (!this.baseName.trim()) {
-      new import_obsidian.Notice("\u30D5\u30A1\u30A4\u30EB\u540D\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
+      new import_obsidian.Notice("\u30D9\u30FC\u30B9\u540D\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
       return;
     }
-    if (this.fileCount <= 0 || this.fileCount > 1e3) {
-      new import_obsidian.Notice("\u30D5\u30A1\u30A4\u30EB\u6570\u306F1\u304B\u30891000\u306E\u9593\u3067\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
+    if (this.fileCount < 1 || this.fileCount > 100) {
+      new import_obsidian.Notice("\u30D5\u30A1\u30A4\u30EB\u6570\u3092\u6B63\u3057\u304F\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
       return;
     }
     try {
-      const result = await this.plugin.createFiles(this.selectedFolder, this.baseName.trim(), this.fileCount);
-      if (result.created.length > 0) {
-        new import_obsidian.Notice(`${result.created.length}\u500B\u306E\u30D5\u30A1\u30A4\u30EB\u3092\u4F5C\u6210\u3057\u307E\u3057\u305F`);
-      }
-      if (result.failed.length > 0) {
-        new import_obsidian.Notice(`${result.failed.length}\u500B\u306E\u30D5\u30A1\u30A4\u30EB\u306E\u4F5C\u6210\u306B\u5931\u6557\u3057\u307E\u3057\u305F`);
-        console.warn("\u4F5C\u6210\u306B\u5931\u6557\u3057\u305F\u30D5\u30A1\u30A4\u30EB:", result.failed);
+      const { created, failed } = await this.plugin.createFiles(
+        this.selectedFolder,
+        this.baseName.trim(),
+        this.fileCount
+      );
+      if (created.length)
+        new import_obsidian.Notice(`${created.length}\u500B \u4F5C\u6210\u5B8C\u4E86`);
+      if (failed.length) {
+        new import_obsidian.Notice(`${failed.length}\u500B \u4F5C\u6210\u5931\u6557`);
+        console.warn("\u5931\u6557:", failed);
       }
       this.close();
-    } catch (error) {
-      new import_obsidian.Notice("\u30D5\u30A1\u30A4\u30EB\u4F5C\u6210\u4E2D\u306B\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F");
-      console.error("File creation error:", error);
+    } catch (e) {
+      new import_obsidian.Notice("\u4F5C\u6210\u4E2D\u306B\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F");
     }
   }
-  async populateFolderDropdown(dropdown) {
-    var _a;
-    try {
-      dropdown.addOption("/", "\u30EB\u30FC\u30C8 (/)");
-      const allFiles = this.app.vault.getAllLoadedFiles();
-      console.log("\u5168\u30D5\u30A1\u30A4\u30EB\u6570:", allFiles.length);
-      let folders = allFiles.filter((file) => file instanceof import_obsidian.TFolder).map((folder) => folder).sort((a, b) => a.path.localeCompare(b.path));
-      console.log("getAllLoadedFiles \u30D5\u30A9\u30EB\u30C0\u6570:", folders.length);
-      if (folders.length === 0) {
-        try {
-          const rootContents = await this.app.vault.adapter.list("/");
-          console.log("adapter.list\u7D50\u679C:", rootContents);
-          const findFoldersRecursively = async (path) => {
-            const foundFolders = [];
-            try {
-              const contents = await this.app.vault.adapter.list(path);
-              for (const folderPath of contents.folders) {
-                const folder = this.app.vault.getAbstractFileByPath(folderPath);
-                if (folder instanceof import_obsidian.TFolder) {
-                  foundFolders.push(folder);
-                  const subFolders = await findFoldersRecursively(folderPath);
-                  foundFolders.push(...subFolders);
-                }
-              }
-            } catch (e) {
-              console.warn(`\u30D5\u30A9\u30EB\u30C0 ${path} \u306E\u8AAD\u307F\u53D6\u308A\u306B\u5931\u6557:`, e);
-            }
-            return foundFolders;
-          };
-          folders = await findFoldersRecursively("/");
-        } catch (adapterError) {
-          console.warn("adapter.list\u3067\u30A8\u30E9\u30FC:", adapterError);
+  async populateFolderDropdown(dd) {
+    dd.addOption("/", "\u30EB\u30FC\u30C8 (/)");
+    let folders = this.app.vault.getAllLoadedFiles().filter((f) => f instanceof import_obsidian.TFolder).map((f) => f).sort((a, b) => a.path.localeCompare(b.path));
+    if (!folders.length) {
+      const recurse = async (p) => {
+        const out = [];
+        const { folders: subs } = await this.app.vault.adapter.list(p);
+        for (const sub of subs) {
+          const f = this.app.vault.getAbstractFileByPath(sub);
+          if (f instanceof import_obsidian.TFolder) {
+            out.push(f);
+            out.push(...await recurse(sub));
+          }
         }
-      }
-      console.log("\u6700\u7D42\u30D5\u30A9\u30EB\u30C0\u6570:", folders.length);
-      console.log("\u30D5\u30A9\u30EB\u30C0\u30EA\u30B9\u30C8:", folders.map((f) => f.path));
-      folders.forEach((folder) => {
-        if (folder.path !== "/" && folder.path !== "") {
-          dropdown.addOption(folder.path, folder.path);
-        }
-      });
-      const currentPath = ((_a = this.selectedFolder) == null ? void 0 : _a.path) || "/";
-      dropdown.setValue(currentPath);
-      dropdown.onChange((value) => {
-        try {
-          this.selectedFolder = value === "/" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(value);
-          console.log("\u30D5\u30A9\u30EB\u30C0\u9078\u629E\u5909\u66F4:", value, this.selectedFolder);
-        } catch (error) {
-          console.error("\u30D5\u30A9\u30EB\u30C0\u9078\u629E\u30A8\u30E9\u30FC:", error);
-          this.selectedFolder = this.app.vault.getRoot();
-        }
-      });
-    } catch (error) {
-      console.error("\u30D5\u30A9\u30EB\u30C0\u30C9\u30ED\u30C3\u30D7\u30C0\u30A6\u30F3\u4F5C\u6210\u30A8\u30E9\u30FC:", error);
-      dropdown.addOption("/", "\u30EB\u30FC\u30C8 (/)");
-      dropdown.setValue("/");
-      this.selectedFolder = this.app.vault.getRoot();
+        return out;
+      };
+      folders = await recurse("/");
     }
+    folders.forEach((f) => {
+      if (f.path !== "/")
+        dd.addOption(f.path, f.path);
+    });
+    dd.setValue(this.selectedFolder.path);
+    dd.onChange((v) => {
+      const f = this.app.vault.getAbstractFileByPath(v);
+      this.selectedFolder = f instanceof import_obsidian.TFolder ? f : this.app.vault.getRoot();
+    });
   }
   onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
+    this.contentEl.empty();
   }
 };
 var MDMakerSettingTab = class extends import_obsidian.PluginSettingTab {
@@ -270,95 +241,71 @@ var MDMakerSettingTab = class extends import_obsidian.PluginSettingTab {
     this.plugin = plugin;
   }
   display() {
-    const { containerEl } = this;
-    containerEl.empty();
-    containerEl.createEl("h2", { text: "MD Maker \u8A2D\u5B9A" });
-    new import_obsidian.Setting(containerEl).setName("\u30C7\u30D5\u30A9\u30EB\u30C8\u306E\u30D9\u30FC\u30B9\u540D").setDesc("\u30D5\u30A1\u30A4\u30EB\u4F5C\u6210\u6642\u306E\u30C7\u30D5\u30A9\u30EB\u30C8\u306E\u30D9\u30FC\u30B9\u540D").addText((text) => text.setPlaceholder("\u30D5\u30A1\u30A4\u30EB").setValue(this.plugin.settings.defaultBaseName).onChange(async (value) => {
-      this.plugin.settings.defaultBaseName = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian.Setting(containerEl).setName("\u30C7\u30D5\u30A9\u30EB\u30C8\u306E\u30D5\u30A1\u30A4\u30EB\u6570").setDesc("\u30D5\u30A1\u30A4\u30EB\u4F5C\u6210\u6642\u306E\u30C7\u30D5\u30A9\u30EB\u30C8\u306E\u30D5\u30A1\u30A4\u30EB\u6570").addText((text) => text.setPlaceholder("5").setValue(this.plugin.settings.defaultFileCount.toString()).onChange(async (value) => {
-      const num = parseInt(value);
-      if (!isNaN(num) && num > 0 && num <= 1e3) {
-        this.plugin.settings.defaultFileCount = num;
+    this.containerEl.empty();
+    this.containerEl.createEl("h2", { text: "MD Maker \u8A2D\u5B9A" });
+    new import_obsidian.Setting(this.containerEl).setName("\u30D5\u30A1\u30A4\u30EB\u540D").setDesc("\u65B0\u898F\u30D5\u30A1\u30A4\u30EB\u306E\u30D9\u30FC\u30B9\u30CD\u30FC\u30E0").addText((txt) => {
+      txt.setPlaceholder(DEFAULT_SETTINGS.defaultBaseName).setValue(this.plugin.settings.defaultBaseName).onChange(async (v) => {
+        this.plugin.settings.defaultBaseName = v;
         await this.plugin.saveSettings();
-      }
-    }));
-    new import_obsidian.Setting(containerEl).setName("\u30C7\u30D5\u30A9\u30EB\u30C8\u306E\u4F5C\u6210\u5148\u30D5\u30A9\u30EB\u30C0").setDesc("\u30D5\u30A1\u30A4\u30EB\u3092\u4F5C\u6210\u3059\u308B\u30C7\u30D5\u30A9\u30EB\u30C8\u30D5\u30A9\u30EB\u30C0\u3092\u9078\u629E\u3057\u307E\u3059").addDropdown(async (dropdown) => {
-      await this.populateFolderDropdown(dropdown);
+      });
     });
-    containerEl.createEl("hr", { cls: "setting-separator" });
-    const quickCreateSection = containerEl.createDiv({ cls: "mdmaker-quick-create" });
-    quickCreateSection.createEl("h3", { text: "\u30AF\u30A4\u30C3\u30AF\u4F5C\u6210" });
-    quickCreateSection.createEl("p", {
-      text: "\u8A2D\u5B9A\u3055\u308C\u305F\u5024\u3067\u5373\u5EA7\u306B\u30D5\u30A1\u30A4\u30EB\u3092\u4F5C\u6210\u3067\u304D\u307E\u3059\u3002\u8A73\u7D30\u306A\u8A2D\u5B9A\u304C\u5FC5\u8981\u306A\u5834\u5408\u306F\u3001\u30EA\u30DC\u30F3\u30A2\u30A4\u30B3\u30F3\u307E\u305F\u306F\u30B3\u30DE\u30F3\u30C9\u30D1\u30EC\u30C3\u30C8\u304B\u3089\u300CMD Maker\u3092\u958B\u304F\u300D\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
-    });
-    const buttonDescription = quickCreateSection.createDiv({ cls: "mdmaker-button-description" });
-    buttonDescription.textContent = `\u300C${this.plugin.settings.defaultBaseName}\u300D\u3092${this.plugin.settings.defaultFileCount}\u500B\u4F5C\u6210\u3057\u307E\u3059`;
-    const buttonContainer = quickCreateSection.createDiv();
-    buttonContainer.style.display = "flex";
-    buttonContainer.style.justifyContent = "center";
-    buttonContainer.style.marginTop = "10px";
-    const createButton = buttonContainer.createEl("button", {
-      text: "\u4ECA\u3059\u3050\u4F5C\u6210",
-      cls: "mdmaker-create-button-settings"
-    });
-    createButton.addEventListener("click", async () => {
-      await this.quickCreateFiles();
-    });
-  }
-  async populateFolderDropdown(dropdown) {
-    try {
-      dropdown.addOption("/", "\u30EB\u30FC\u30C8 (/)");
-      const allFiles = this.app.vault.getAllLoadedFiles();
-      const folders = allFiles.filter((file) => file instanceof import_obsidian.TFolder).map((folder) => folder).sort((a, b) => a.path.localeCompare(b.path));
-      folders.forEach((folder) => {
-        if (folder.path !== "/" && folder.path !== "") {
-          dropdown.addOption(folder.path, folder.path);
+    new import_obsidian.Setting(this.containerEl).setName("\u30D5\u30A1\u30A4\u30EB\u6570").setDesc("1\u301C100\u306E\u7BC4\u56F2").addText((txt) => {
+      txt.setPlaceholder(String(DEFAULT_SETTINGS.defaultFileCount)).setValue(String(this.plugin.settings.defaultFileCount)).onChange(async (v) => {
+        const n = parseInt(v);
+        if (!isNaN(n) && n >= 1 && n <= 100) {
+          this.plugin.settings.defaultFileCount = n;
+          await this.plugin.saveSettings();
         }
       });
-      dropdown.setValue(this.plugin.settings.targetFolder);
-      dropdown.onChange(async (value) => {
-        this.plugin.settings.targetFolder = value;
+    });
+    new import_obsidian.Setting(this.containerEl).setName("\u9023\u756A\u5F62\u5F0F").setDesc("`n` \u306F\u9023\u756A\u306B\u3002`\\n` \u3067\u6587\u5B57n\u3068\u3057\u3066\u51FA\u529B").addText((txt) => {
+      txt.setPlaceholder(DEFAULT_SETTINGS.numberFormat).setValue(this.plugin.settings.numberFormat).onChange(async (v) => {
+        this.plugin.settings.numberFormat = v;
         await this.plugin.saveSettings();
-        this.display();
       });
-    } catch (error) {
-      console.error("\u30D5\u30A9\u30EB\u30C0\u30C9\u30ED\u30C3\u30D7\u30C0\u30A6\u30F3\u306E\u4F5C\u6210\u30A8\u30E9\u30FC:", error);
-      dropdown.addOption("/", "\u30EB\u30FC\u30C8 (/)");
-      dropdown.setValue("/");
-    }
-  }
-  async quickCreateFiles() {
-    try {
-      let targetFolder;
-      const targetPath = this.plugin.settings.targetFolder;
-      if (targetPath === "/") {
-        targetFolder = this.app.vault.getRoot();
-      } else {
-        const folder = this.app.vault.getAbstractFileByPath(targetPath);
-        if (folder instanceof import_obsidian.TFolder) {
-          targetFolder = folder;
-        } else {
-          new import_obsidian.Notice("\u6307\u5B9A\u3055\u308C\u305F\u30D5\u30A9\u30EB\u30C0\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u30EB\u30FC\u30C8\u30D5\u30A9\u30EB\u30C0\u306B\u4F5C\u6210\u3057\u307E\u3059\u3002");
-          targetFolder = this.app.vault.getRoot();
-        }
-      }
-      const result = await this.plugin.createFiles(
-        targetFolder,
+    });
+    new import_obsidian.Setting(this.containerEl).setName("\u30BC\u30ED\u30D1\u30C7\u30A3\u30F3\u30B0\u6841\u6570").setDesc("\u9023\u756A\u3092\u4F55\u6841\u3067\u30BC\u30ED\u30D1\u30C7\u30A3\u30F3\u30B0\u3059\u308B\u304B\uFF080\u306F\u306A\u3057\uFF09").addDropdown((dd) => {
+      ["0", "2", "3"].forEach((val) => {
+        dd.addOption(val, val === "0" ? "\u306A\u3057" : `${val}\u6841`);
+      });
+      dd.setValue(String(this.plugin.settings.padWidth));
+      dd.onChange(async (v) => {
+        this.plugin.settings.padWidth = parseInt(v);
+        await this.plugin.saveSettings();
+      });
+    });
+    new import_obsidian.Setting(this.containerEl).setName("\u4F5C\u6210\u5148\u30C7\u30A3\u30EC\u30AF\u30C8\u30EA").setDesc("\u5BFE\u8C61\u30C7\u30A3\u30EC\u30AF\u30C8\u30EA\u306B\u30D5\u30A1\u30A4\u30EB\u304C\u4E00\u62EC\u4F5C\u6210\u3055\u308C\u307E\u3059\u3002").addDropdown((dd) => this.populateFolderDropdown(dd));
+    const action = this.containerEl.createDiv();
+    action.style.textAlign = "right";
+    action.style.marginTop = "40px";
+    const quickBtn = action.createEl("button", { text: "\u4E00\u62EC\u4F5C\u6210" });
+    quickBtn.addEventListener("click", async () => {
+      const f = this.app.vault.getAbstractFileByPath(this.plugin.settings.targetFolder);
+      const tgt = f instanceof import_obsidian.TFolder ? f : this.app.vault.getRoot();
+      const { created, failed } = await this.plugin.createFiles(
+        tgt,
         this.plugin.settings.defaultBaseName,
         this.plugin.settings.defaultFileCount
       );
-      if (result.created.length > 0) {
-        new import_obsidian.Notice(`${result.created.length}\u500B\u306E\u30D5\u30A1\u30A4\u30EB\u3092\u4F5C\u6210\u3057\u307E\u3057\u305F`);
+      if (created.length)
+        new import_obsidian.Notice(`${created.length}\u500B \u4F5C\u6210\u5B8C\u4E86`);
+      if (failed.length) {
+        new import_obsidian.Notice(`${failed.length}\u500B \u4F5C\u6210\u5931\u6557`);
+        console.warn("\u5931\u6557:", failed);
       }
-      if (result.failed.length > 0) {
-        new import_obsidian.Notice(`${result.failed.length}\u500B\u306E\u30D5\u30A1\u30A4\u30EB\u306E\u4F5C\u6210\u306B\u5931\u6557\u3057\u307E\u3057\u305F`);
-        console.warn("\u4F5C\u6210\u306B\u5931\u6557\u3057\u305F\u30D5\u30A1\u30A4\u30EB:", result.failed);
-      }
-    } catch (error) {
-      new import_obsidian.Notice("\u30D5\u30A1\u30A4\u30EB\u4F5C\u6210\u4E2D\u306B\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F");
-      console.error("Quick file creation error:", error);
-    }
+    });
+  }
+  async populateFolderDropdown(dd) {
+    dd.addOption("/", "\u30EB\u30FC\u30C8 (/)");
+    const folders = this.app.vault.getAllLoadedFiles().filter((f) => f instanceof import_obsidian.TFolder).map((f) => f).sort((a, b) => a.path.localeCompare(b.path));
+    folders.forEach((f) => {
+      if (f.path !== "/")
+        dd.addOption(f.path, f.path);
+    });
+    dd.setValue(this.plugin.settings.targetFolder);
+    dd.onChange(async (v) => {
+      this.plugin.settings.targetFolder = v;
+      await this.plugin.saveSettings();
+    });
   }
 };

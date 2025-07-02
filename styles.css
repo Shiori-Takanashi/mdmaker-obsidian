@@ -1,114 +1,50 @@
-/* MD Maker Plugin Styles */
-
-.mdmaker-modal {
-    max-width: 600px;
-    margin: 0 auto;
+/* ボタン共通（modal-button-container もカバー） */
+.mdmaker-button-container .mdmaker-create-button,
+.mdmaker-button-container .mdmaker-cancel-button,
+.modal-button-container .mdmaker-create-button,
+.modal-button-container .mdmaker-cancel-button {
+    padding: 14px 28px;
+    font-size: 1.1rem;
+    border-radius: 4px;
+    border: none;
 }
 
-.mdmaker-preview {
-    background-color: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
-    padding: 16px;
-    margin-top: 16px;
-    font-family: var(--font-monospace);
-    max-height: 200px;
-    overflow-y: auto;
-}
-
-.mdmaker-preview-item {
-    padding: 2px 0;
-    font-size: 0.9em;
-}
-
-.mdmaker-button-container {
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
-    margin-top: 20px;
-}
-
-.mdmaker-create-button {
+/* 「一括作成」ボタン */
+.mdmaker-button-container .mdmaker-create-button,
+.modal-button-container .mdmaker-create-button {
     background-color: var(--interactive-accent);
     color: var(--text-on-accent);
-    border: none;
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 500;
 }
 
-.mdmaker-create-button:hover {
+.mdmaker-button-container .mdmaker-create-button:hover,
+.modal-button-container .mdmaker-create-button:hover {
     background-color: var(--interactive-accent-hover);
 }
 
-.mdmaker-cancel-button {
+/* 「キャンセル」ボタン */
+.mdmaker-button-container .mdmaker-cancel-button,
+.modal-button-container .mdmaker-cancel-button {
     background-color: var(--background-secondary);
     color: var(--text-normal);
     border: 1px solid var(--background-modifier-border);
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
 }
 
-.mdmaker-cancel-button:hover {
+.mdmaker-button-container .mdmaker-cancel-button:hover,
+.modal-button-container .mdmaker-cancel-button:hover {
     background-color: var(--background-modifier-hover);
 }
 
-/* MD Maker Settings Styles */
-
-.setting-separator {
-    margin: 20px 0;
-    border: none;
-    border-top: 1px solid var(--background-modifier-border);
-}
-
-.mdmaker-settings-section {
-    margin: 20px 0;
-}
-
-.mdmaker-quick-create {
-    background-color: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 8px;
-    padding: 16px;
-    margin-top: 16px;
-}
-
-.mdmaker-quick-create h3 {
-    margin-top: 0;
-    margin-bottom: 8px;
-    color: var(--text-accent);
-}
-
-.mdmaker-quick-create p {
-    margin-bottom: 12px;
-    color: var(--text-muted);
-    font-size: 0.9em;
-    line-height: 1.4;
-}
-
+/* 設定タブ内「一括作成」ボタン */
 .mdmaker-create-button-settings {
     background-color: var(--interactive-accent);
     color: var(--text-on-accent);
-    border: none;
-    padding: 10px 20px;
+    padding: 24px 32px;
+    font-size: 1.4rem;
     border-radius: 6px;
-    cursor: pointer;
-    font-weight: 500;
-    font-size: 14px;
+    border: none;
     transition: background-color 0.2s ease;
 }
 
 .mdmaker-create-button-settings:hover {
     background-color: var(--interactive-accent-hover);
-}
-
-.mdmaker-button-description {
-    margin-bottom: 12px;
-    padding: 8px 12px;
-    background-color: var(--background-primary-alt);
-    border-radius: 4px;
-    font-size: 0.9em;
-    color: var(--text-muted);
 }

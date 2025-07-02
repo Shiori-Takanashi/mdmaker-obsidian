@@ -1,5 +1,7 @@
 {
   "defaultFileCount": 3,
-  "defaultBaseName": "input",
-  "targetFolder": "📋Languages/Bash"
+  "defaultBaseName": "",
+  "targetFolder": "/",
+  "numberFormat": "",
+  "padWidth": 0
 }
