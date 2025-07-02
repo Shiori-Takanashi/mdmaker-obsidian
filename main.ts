@@ -9,6 +9,51 @@ import {
     DropdownComponent,
 } from 'obsidian';
 
+// フォルダドロップダウンを生成するユーティリティ関数
+async function populateFolderDropdown(
+    app: App,
+    dropdown: DropdownComponent,
+    currentValue: string,
+    onChange: (value: string) => void | Promise<void>
+): Promise<void> {
+    dropdown.addOption('/', 'ルート (/)');
+
+    let folders = app.vault.getAllLoadedFiles()
+        .filter(f => f instanceof TFolder)
+        .map(f => f as TFolder)
+        .sort((a, b) => a.path.localeCompare(b.path));
+
+    // フォルダが読み込まれていない場合の対応
+    if (!folders.length) {
+        const recurse = async (path: string): Promise<TFolder[]> => {
+            const result: TFolder[] = [];
+            try {
+                const { folders: subFolders } = await app.vault.adapter.list(path);
+                for (const subPath of subFolders) {
+                    const folder = app.vault.getAbstractFileByPath(subPath);
+                    if (folder instanceof TFolder) {
+                        result.push(folder);
+                        result.push(...await recurse(subPath));
+                    }
+                }
+            } catch (error) {
+                // フォルダ読み込みエラーは無視
+            }
+            return result;
+        };
+        folders = await recurse('/');
+    }
+
+    folders.forEach(folder => {
+        if (folder.path !== '/') {
+            dropdown.addOption(folder.path, folder.path);
+        }
+    });
+
+    dropdown.setValue(currentValue);
+    dropdown.onChange(onChange);
+}
+
 interface MDMakerSettings {
     defaultFileCount: number;
     defaultBaseName: string;
@@ -55,41 +100,48 @@ export default class MDMakerPlugin extends Plugin {
         await this.saveData(this.settings);
     }
 
+    /**
+     * 全角数字を半角数字に変換する
+     */
     convertFullwidthToHalfwidth(text: string): string {
-        const full = '０１２３４５６７８９';
-        const half = '0123456789';
-        return text.replace(/[０-９]/g, ch => half[full.indexOf(ch)]);
+        const fullwidthDigits = '０１２３４５６７８９';
+        const halfwidthDigits = '0123456789';
+        return text.replace(/[０-９]/g, char => halfwidthDigits[fullwidthDigits.indexOf(char)]);
     }
 
     /**
+     * 連番フォーマットの変換処理
      * rawFmt 中のすべての "n" を連番に置換し、
      * "\n"（バックスラッシュ＋n）だけはリテラル "n" として扱います。
      */
-    public formatSegment(rawFmt: string, pad: number, index: number): string {
-        const ESC = '__LITERAL_N__';
-        // 1) \n をマーカーに
-        let t = rawFmt.replace(/\\n/g, ESC);
-        // 2) 残りの n を連番に
-        const num = pad > 0
-            ? index.toString().padStart(pad, '0')
+    public formatSegment(rawFormat: string, padWidth: number, index: number): string {
+        const ESCAPE_MARKER = '__LITERAL_N__';
+        // 1) \n をマーカーに置換
+        let text = rawFormat.replace(/\\n/g, ESCAPE_MARKER);
+        // 2) 残りの n を連番に置換
+        const numberString = padWidth > 0
+            ? index.toString().padStart(padWidth, '0')
             : index.toString();
-        t = t.replace(/n/g, num);
+        text = text.replace(/n/g, numberString);
         // 3) マーカーを "n" に戻す
-        return t.replace(new RegExp(ESC, 'g'), 'n');
+        return text.replace(new RegExp(ESCAPE_MARKER, 'g'), 'n');
     }
 
+    /**
+     * 複数のMarkdownファイルを作成する
+     */
     async createFiles(
         folder: TFolder,
         baseName: string,
         count: number
     ): Promise<{ created: string[]; failed: string[] }> {
-        const { numberFormat: rawFmt, padWidth: pad } = this.settings;
+        const { numberFormat: rawFormat, padWidth } = this.settings;
         const created: string[] = [];
         const failed: string[] = [];
 
         for (let i = 1; i <= count; i++) {
-            const seg = this.formatSegment(rawFmt, pad, i);
-            const fileName = `${baseName}${seg}.md`;
+            const segment = this.formatSegment(rawFormat, padWidth, i);
+            const fileName = `${baseName}${segment}.md`;
             const filePath = folder.path === '/' ? fileName : `${folder.path}/${fileName}`;
 
             try {
@@ -99,8 +151,9 @@ export default class MDMakerPlugin extends Plugin {
                 }
                 await this.app.vault.create(filePath, '');
                 created.push(fileName);
-            } catch (e: any) {
-                failed.push(`${fileName} (エラー: ${e.message})`);
+            } catch (error: unknown) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                failed.push(`${fileName} (エラー: ${errorMessage})`);
             }
         }
 
@@ -137,29 +190,42 @@ class MDMakerModal extends Modal {
         new Setting(this.contentEl)
             .setName('作成先フォルダ')
             .setDesc('ファイルを作成するフォルダを選択してください')
-            .addDropdown(dd => this.populateFolderDropdown(dd));
+            .addDropdown(dropdown => {
+                populateFolderDropdown(
+                    this.app,
+                    dropdown,
+                    this.selectedFolder.path,
+                    (value: string) => {
+                        const folder = this.app.vault.getAbstractFileByPath(value);
+                        this.selectedFolder = folder instanceof TFolder ? folder : this.app.vault.getRoot();
+                    }
+                );
+            });
 
         // ベース名
         new Setting(this.contentEl)
             .setName('ベース名')
             .setDesc('ファイル名のベースを入力')
-            .addText(txt => {
-                txt.setPlaceholder('例: メモ')
+            .addText(textInput => {
+                textInput.setPlaceholder('例: メモ')
                     .setValue(this.baseName)
-                    .onChange(v => { this.baseName = v; });
+                    .onChange(value => {
+                        this.baseName = value;
+                    });
             });
 
         // ファイル数
         new Setting(this.contentEl)
             .setName('ファイル数')
             .setDesc('1〜100 の範囲で入力')
-            .addText(txt => {
-                txt.setPlaceholder('例: 5')
+            .addText(textInput => {
+                textInput.setPlaceholder('例: 5')
                     .setValue(this.fileCount.toString())
-                    .onChange(v => {
-                        const n = parseInt(this.plugin.convertFullwidthToHalfwidth(v));
-                        if (!isNaN(n) && n >= 1 && n <= 100) {
-                            this.fileCount = n;
+                    .onChange(value => {
+                        const convertedValue = this.plugin.convertFullwidthToHalfwidth(value);
+                        const numericValue = parseInt(convertedValue);
+                        if (!isNaN(numericValue) && numericValue >= 1 && numericValue <= 100) {
+                            this.fileCount = numericValue;
                         }
                     });
             });
@@ -168,22 +234,26 @@ class MDMakerModal extends Modal {
         new Setting(this.contentEl)
             .setName('連番形式')
             .setDesc('`n` は必ず番号に。`\\n` でリテラル「n」を出力')
-            .addText(txt => {
-                txt.setPlaceholder(DEFAULT_SETTINGS.numberFormat)
+            .addText(textInput => {
+                textInput.setPlaceholder(DEFAULT_SETTINGS.numberFormat)
                     .setValue(this.numberFormat)
-                    .onChange(v => { this.numberFormat = v; });
+                    .onChange(value => {
+                        this.numberFormat = value;
+                    });
             });
 
         // ゼロパディング桁数
         new Setting(this.contentEl)
             .setName('ゼロパディング桁数')
             .setDesc('連番を何桁でゼロパディングするか（0はなし）')
-            .addDropdown(dd => {
-                ['0', '2', '3'].forEach(val => {
-                    dd.addOption(val, val === '0' ? 'なし' : `${val}桁`);
+            .addDropdown(dropdown => {
+                ['0', '2', '3'].forEach(value => {
+                    dropdown.addOption(value, value === '0' ? 'なし' : `${value}桁`);
                 });
-                dd.setValue(String(this.padWidth));
-                dd.onChange(v => { this.padWidth = parseInt(v); });
+                dropdown.setValue(String(this.padWidth));
+                dropdown.onChange(value => {
+                    this.padWidth = parseInt(value);
+                });
             });
 
         // プレビュー
@@ -193,27 +263,30 @@ class MDMakerModal extends Modal {
         // 区切り線
         this.contentEl.createEl('hr');
 
-        // 一括作成／キャンセル
-        const btnWrp = this.contentEl.createDiv({ cls: 'mdmaker-button-container' });
-        btnWrp.style.justifyContent = 'flex-end';
+        // ボタンコンテナ
+        const buttonContainer = this.contentEl.createDiv({ cls: 'modal-button-container' });
+        buttonContainer.style.display = 'flex';
+        buttonContainer.style.justifyContent = 'flex-end';
+        buttonContainer.style.gap = '8px';
 
-        const createBtn = btnWrp.createEl('button', {
+        const createButton = buttonContainer.createEl('button', {
             text: '一括作成',
             cls: 'mdmaker-create-button'
         });
-        createBtn.addEventListener('click', async () => {
+        createButton.addEventListener('click', async () => {
             this.plugin.settings.numberFormat = this.numberFormat;
             this.plugin.settings.padWidth = this.padWidth;
             await this.plugin.saveSettings();
             await this.executeCreate();
         });
 
-        const cancelBtn = btnWrp.createEl('button', {
+        const cancelButton = buttonContainer.createEl('button', {
             text: 'キャンセル',
             cls: 'mdmaker-cancel-button'
         });
-        cancelBtn.addEventListener('click', () => this.close());
+        cancelButton.addEventListener('click', () => this.close());
 
+        // プレビューの自動更新
         this.contentEl.addEventListener('input', () => this.updatePreview(preview));
     }
 
@@ -221,16 +294,16 @@ class MDMakerModal extends Modal {
         container.empty();
         if (!this.baseName.trim() || this.fileCount < 1) return;
 
-        const max = Math.min(this.fileCount, 5);
-        for (let i = 1; i <= max; i++) {
-            const seg = this.plugin.formatSegment(this.numberFormat, this.padWidth, i);
+        const maxPreviewCount = Math.min(this.fileCount, 5);
+        for (let i = 1; i <= maxPreviewCount; i++) {
+            const segment = this.plugin.formatSegment(this.numberFormat, this.padWidth, i);
             const item = container.createDiv({ cls: 'mdmaker-preview-item' });
-            item.textContent = `${this.baseName}${seg}.md`;
+            item.textContent = `${this.baseName}${segment}.md`;
         }
         if (this.fileCount > 5) {
-            const more = container.createDiv({ cls: 'mdmaker-preview-item' });
-            more.style.fontStyle = 'italic';
-            more.textContent = `...あと${this.fileCount - 5}個`;
+            const moreItem = container.createDiv({ cls: 'mdmaker-preview-item' });
+            moreItem.style.fontStyle = 'italic';
+            moreItem.textContent = `...あと${this.fileCount - 5}個`;
         }
     }
 
@@ -243,52 +316,25 @@ class MDMakerModal extends Modal {
             new Notice('ファイル数を正しく入力してください');
             return;
         }
+
         try {
             const { created, failed } = await this.plugin.createFiles(
                 this.selectedFolder,
                 this.baseName.trim(),
                 this.fileCount
             );
-            if (created.length) new Notice(`${created.length}個 作成完了`);
-            if (failed.length) {
-                new Notice(`${failed.length}個 作成失敗`);
-                console.warn('失敗:', failed);
-            }
-            this.close();
-        } catch {
-            new Notice('作成中にエラーが発生しました');
-        }
-    }
 
-    private async populateFolderDropdown(dd: DropdownComponent): Promise<void> {
-        dd.addOption('/', 'ルート (/)');
-        let folders = this.app.vault.getAllLoadedFiles()
-            .filter(f => f instanceof TFolder)
-            .map(f => f as TFolder)
-            .sort((a, b) => a.path.localeCompare(b.path));
-        if (!folders.length) {
-            const recurse = async (p: string): Promise<TFolder[]> => {
-                const out: TFolder[] = [];
-                const { folders: subs } = await this.app.vault.adapter.list(p);
-                for (const sub of subs) {
-                    const f = this.app.vault.getAbstractFileByPath(sub);
-                    if (f instanceof TFolder) {
-                        out.push(f);
-                        out.push(...await recurse(sub));
-                    }
-                }
-                return out;
-            };
-            folders = await recurse('/');
+            if (created.length) {
+                new Notice(`${created.length}個のファイルを作成しました`);
+            }
+            if (failed.length) {
+                new Notice(`${failed.length}個のファイル作成に失敗しました`);
+            }
+
+            this.close();
+        } catch (error) {
+            new Notice('ファイル作成中にエラーが発生しました');
         }
-        folders.forEach(f => {
-            if (f.path !== '/') dd.addOption(f.path, f.path);
-        });
-        dd.setValue(this.selectedFolder.path);
-        dd.onChange(v => {
-            const f = this.app.vault.getAbstractFileByPath(v);
-            this.selectedFolder = f instanceof TFolder ? f : this.app.vault.getRoot();
-        });
     }
 
     protected onClose(): void {
@@ -310,28 +356,28 @@ class MDMakerSettingTab extends PluginSettingTab {
 
         // ファイル名
         new Setting(this.containerEl)
-            .setName('ファイル名')
+            .setName('デフォルトファイル名')
             .setDesc('新規ファイルのベースネーム')
-            .addText(txt => {
-                txt.setPlaceholder(DEFAULT_SETTINGS.defaultBaseName)
+            .addText(textInput => {
+                textInput.setPlaceholder(DEFAULT_SETTINGS.defaultBaseName)
                     .setValue(this.plugin.settings.defaultBaseName)
-                    .onChange(async v => {
-                        this.plugin.settings.defaultBaseName = v;
+                    .onChange(async value => {
+                        this.plugin.settings.defaultBaseName = value;
                         await this.plugin.saveSettings();
                     });
             });
 
         // ファイル数
         new Setting(this.containerEl)
-            .setName('ファイル数')
+            .setName('デフォルトファイル数')
             .setDesc('1〜100の範囲')
-            .addText(txt => {
-                txt.setPlaceholder(String(DEFAULT_SETTINGS.defaultFileCount))
+            .addText(textInput => {
+                textInput.setPlaceholder(String(DEFAULT_SETTINGS.defaultFileCount))
                     .setValue(String(this.plugin.settings.defaultFileCount))
-                    .onChange(async v => {
-                        const n = parseInt(v);
-                        if (!isNaN(n) && n >= 1 && n <= 100) {
-                            this.plugin.settings.defaultFileCount = n;
+                    .onChange(async value => {
+                        const numericValue = parseInt(value);
+                        if (!isNaN(numericValue) && numericValue >= 1 && numericValue <= 100) {
+                            this.plugin.settings.defaultFileCount = numericValue;
                             await this.plugin.saveSettings();
                         }
                     });
@@ -339,73 +385,74 @@ class MDMakerSettingTab extends PluginSettingTab {
 
         // 連番形式
         new Setting(this.containerEl)
-            .setName('連番形式')
+            .setName('デフォルト連番形式')
             .setDesc('`n` は連番に。`\\n` で文字nとして出力')
-            .addText(txt => {
-                txt.setPlaceholder(DEFAULT_SETTINGS.numberFormat)
+            .addText(textInput => {
+                textInput.setPlaceholder(DEFAULT_SETTINGS.numberFormat)
                     .setValue(this.plugin.settings.numberFormat)
-                    .onChange(async v => {
-                        this.plugin.settings.numberFormat = v;
+                    .onChange(async value => {
+                        this.plugin.settings.numberFormat = value;
                         await this.plugin.saveSettings();
                     });
             });
 
         // ゼロパディング桁数
         new Setting(this.containerEl)
-            .setName('ゼロパディング桁数')
+            .setName('デフォルトゼロパディング桁数')
             .setDesc('連番を何桁でゼロパディングするか（0はなし）')
-            .addDropdown(dd => {
-                ['0', '2', '3'].forEach(val => {
-                    dd.addOption(val, val === '0' ? 'なし' : `${val}桁`);
+            .addDropdown(dropdown => {
+                ['0', '2', '3'].forEach(value => {
+                    dropdown.addOption(value, value === '0' ? 'なし' : `${value}桁`);
                 });
-                dd.setValue(String(this.plugin.settings.padWidth));
-                dd.onChange(async v => {
-                    this.plugin.settings.padWidth = parseInt(v);
+                dropdown.setValue(String(this.plugin.settings.padWidth));
+                dropdown.onChange(async value => {
+                    this.plugin.settings.padWidth = parseInt(value);
                     await this.plugin.saveSettings();
                 });
             });
 
         // 作成先ディレクトリ
         new Setting(this.containerEl)
-            .setName('作成先ディレクトリ')
+            .setName('デフォルト作成先ディレクトリ')
             .setDesc('対象ディレクトリにファイルが一括作成されます。')
-            .addDropdown(dd => this.populateFolderDropdown(dd));
+            .addDropdown(dropdown => {
+                populateFolderDropdown(
+                    this.app,
+                    dropdown,
+                    this.plugin.settings.targetFolder,
+                    async (value: string) => {
+                        this.plugin.settings.targetFolder = value;
+                        await this.plugin.saveSettings();
+                    }
+                );
+            });
 
-        // クイック作成ボタン（右寄せ）
-        const action = this.containerEl.createDiv();
-        action.style.textAlign = 'right';
-        action.style.marginTop = '40px';
+        // クイック作成ボタン
+        const actionContainer = this.containerEl.createDiv();
+        actionContainer.style.textAlign = 'right';
+        actionContainer.style.marginTop = '40px';
 
-        const quickBtn = action.createEl('button', { text: '一括作成' });
-        quickBtn.addEventListener('click', async () => {
-            const f = this.app.vault.getAbstractFileByPath(this.plugin.settings.targetFolder) as TFolder;
-            const tgt = f instanceof TFolder ? f : this.app.vault.getRoot();
+        const quickCreateButton = actionContainer.createEl('button', {
+            text: '設定値で一括作成',
+            cls: 'mdmaker-create-button-settings'
+        });
+        quickCreateButton.addEventListener('click', async () => {
+            const folderPath = this.plugin.settings.targetFolder || '/';
+            const folder = this.app.vault.getAbstractFileByPath(folderPath);
+            const targetFolder = folder instanceof TFolder ? folder : this.app.vault.getRoot();
+
             const { created, failed } = await this.plugin.createFiles(
-                tgt,
+                targetFolder,
                 this.plugin.settings.defaultBaseName,
                 this.plugin.settings.defaultFileCount
             );
-            if (created.length) new Notice(`${created.length}個 作成完了`);
-            if (failed.length) {
-                new Notice(`${failed.length}個 作成失敗`);
-                console.warn('失敗:', failed);
-            }
-        });
-    }
 
-    private async populateFolderDropdown(dd: DropdownComponent): Promise<void> {
-        dd.addOption('/', 'ルート (/)');
-        const folders = this.app.vault.getAllLoadedFiles()
-            .filter(f => f instanceof TFolder)
-            .map(f => f as TFolder)
-            .sort((a, b) => a.path.localeCompare(b.path));
-        folders.forEach(f => {
-            if (f.path !== '/') dd.addOption(f.path, f.path);
-        });
-        dd.setValue(this.plugin.settings.targetFolder);
-        dd.onChange(async v => {
-            this.plugin.settings.targetFolder = v;
-            await this.plugin.saveSettings();
+            if (created.length) {
+                new Notice(`${created.length}個のファイルを作成しました`);
+            }
+            if (failed.length) {
+                new Notice(`${failed.length}個のファイル作成に失敗しました`);
+            }
         });
     }
 }

@@ -3,10 +3,12 @@
 .mdmaker-button-container .mdmaker-cancel-button,
 .modal-button-container .mdmaker-create-button,
 .modal-button-container .mdmaker-cancel-button {
-    padding: 14px 28px;
-    font-size: 1.1rem;
-    border-radius: 4px;
+    padding: 12px 24px;
+    font-size: 1rem;
+    border-radius: 6px;
     border: none;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
 }
 
 /* 「一括作成」ボタン */
@@ -38,13 +40,44 @@
 .mdmaker-create-button-settings {
     background-color: var(--interactive-accent);
     color: var(--text-on-accent);
-    padding: 24px 32px;
-    font-size: 1.4rem;
+    padding: 16px 32px;
+    font-size: 1.1rem;
     border-radius: 6px;
     border: none;
+    cursor: pointer;
     transition: background-color 0.2s ease;
 }
 
 .mdmaker-create-button-settings:hover {
     background-color: var(--interactive-accent-hover);
+}
+
+/* プレビュー表示 */
+.mdmaker-preview {
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 12px;
+    margin: 16px 0;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.mdmaker-preview-item {
+    font-family: var(--font-monospace);
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    padding: 2px 0;
+}
+
+.mdmaker-preview-item:first-child {
+    color: var(--text-normal);
+}
+
+/* ボタンコンテナのレイアウト */
+.modal-button-container {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
 }
