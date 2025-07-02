@@ -6,5 +6,7 @@
     "description": "複数のMarkdownファイルを連番で作成するプラグイン",
     "author": "Takanashi",
     "authorUrl": "",
+    "main": "main.js",
+    "css": "styles.css",
     "isDesktopOnly": false
 }
