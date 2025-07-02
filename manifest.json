@@ -1,0 +1,10 @@
+{
+    "id": "mdmaker",
+    "name": "MD Maker",
+    "version": "1.0.0",
+    "minAppVersion": "0.15.0",
+    "description": "複数のMarkdownファイルを連番で作成するプラグイン",
+    "author": "Takanashi",
+    "authorUrl": "",
+    "isDesktopOnly": false
+}

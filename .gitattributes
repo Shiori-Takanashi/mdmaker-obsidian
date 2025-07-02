@@ -1,0 +1,115 @@
+# ===================================
+# Git Attributes for Obsidian Plugin
+# ===================================
+# このファイルはGitでの改行コード処理とファイル属性を定義します
+
+# デフォルト設定: すべてのテキストファイルで改行コードを自動変換
+* text=auto
+
+# ===================================
+# テキストファイル（LF改行に統一）
+# ===================================
+# ソースコード
+*.ts text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+
+# 設定ファイル
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.conf text eol=lf
+*.config text eol=lf
+
+# ドキュメント
+*.md text eol=lf
+*.txt text eol=lf
+*.rst text eol=lf
+
+# Web関連
+*.html text eol=lf
+*.htm text eol=lf
+*.xml text eol=lf
+*.svg text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+*.bash text eol=lf
+
+# ===================================
+# プラットフォーム固有ファイル
+# ===================================
+# Windows用スクリプト（CRLF維持）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# ===================================
+# バイナリファイル
+# ===================================
+# 画像ファイル
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.bmp binary
+*.webp binary
+*.svg binary
+*.tiff binary
+*.tif binary
+
+# フォント
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.eot binary
+
+# アーカイブ
+*.zip binary
+*.tar binary
+*.gz binary
+*.rar binary
+*.7z binary
+
+# その他のバイナリ
+*.pdf binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+
+# ===================================
+# Git LFS（大きなファイル用）
+# ===================================
+# 必要に応じてコメントアウトを外してください
+# *.zip filter=lfs diff=lfs merge=lfs -text
+# *.pdf filter=lfs diff=lfs merge=lfs -text
+
+# ===================================
+# 特別な処理が必要なファイル
+# ===================================
+# package-lock.json は自動生成なので改行コード変換を避ける
+package-lock.json text eol=lf
+yarn.lock text eol=lf
+
+# .gitignore と .gitattributes 自体
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# ===================================
+# Obsidian プラグイン固有
+# ===================================
+# manifest.json（プラグイン設定）
+manifest.json text eol=lf
+
+# versions.json（バージョン管理）
+versions.json text eol=lf
+
+# ビルド設定
+esbuild.config.mjs text eol=lf
+tsconfig.json text eol=lf

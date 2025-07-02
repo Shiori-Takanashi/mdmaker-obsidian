@@ -1,0 +1,56 @@
+/* MD Maker Plugin Styles */
+
+.mdmaker-modal {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.mdmaker-preview {
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 16px;
+    margin-top: 16px;
+    font-family: var(--font-monospace);
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.mdmaker-preview-item {
+    padding: 2px 0;
+    font-size: 0.9em;
+}
+
+.mdmaker-button-container {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+.mdmaker-create-button {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.mdmaker-create-button:hover {
+    background-color: var(--interactive-accent-hover);
+}
+
+.mdmaker-cancel-button {
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.mdmaker-cancel-button:hover {
+    background-color: var(--background-modifier-hover);
+}
