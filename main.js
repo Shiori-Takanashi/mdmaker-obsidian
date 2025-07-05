@@ -110,12 +110,13 @@ var MDMakerPlugin = class extends import_obsidian.Plugin {
   /**
    * 複数のMarkdownファイルを作成する
    */
-  async createFiles(folder, baseName, count) {
-    const { numberFormat: rawFormat, padWidth } = this.settings;
+  async createFiles(folder, baseName, count, numberFormat, padWidth) {
+    const rawFormat = numberFormat || this.settings.numberFormat;
+    const padding = padWidth !== void 0 ? padWidth : this.settings.padWidth;
     const created = [];
     const failed = [];
     for (let i = 1; i <= count; i++) {
-      const segment = this.formatSegment(rawFormat, padWidth, i);
+      const segment = this.formatSegment(rawFormat, padding, i);
       const fileName = `${baseName}${segment}.md`;
       const filePath = folder.path === "/" ? fileName : `${folder.path}/${fileName}`;
       try {
@@ -199,9 +200,6 @@ var MDMakerModal = class extends import_obsidian.Modal {
       cls: "mdmaker-create-button"
     });
     createButton.addEventListener("click", async () => {
-      this.plugin.settings.numberFormat = this.numberFormat;
-      this.plugin.settings.padWidth = this.padWidth;
-      await this.plugin.saveSettings();
       await this.executeCreate();
     });
     const cancelButton = buttonContainer.createEl("button", {
@@ -237,10 +235,15 @@ var MDMakerModal = class extends import_obsidian.Modal {
       return;
     }
     try {
+      this.plugin.settings.numberFormat = this.numberFormat;
+      this.plugin.settings.padWidth = this.padWidth;
+      await this.plugin.saveSettings();
       const { created, failed } = await this.plugin.createFiles(
         this.selectedFolder,
         this.baseName.trim(),
-        this.fileCount
+        this.fileCount,
+        this.numberFormat,
+        this.padWidth
       );
       if (created.length) {
         new import_obsidian.Notice(`${created.length}\u500B\u306E\u30D5\u30A1\u30A4\u30EB\u3092\u4F5C\u6210\u3057\u307E\u3057\u305F`);

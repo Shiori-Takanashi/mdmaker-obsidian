@@ -1,7 +1,7 @@
 {
-  "defaultFileCount": 3,
-  "defaultBaseName": "",
-  "targetFolder": "/",
-  "numberFormat": "",
-  "padWidth": 0
+  "defaultFileCount": 12,
+  "defaultBaseName": "解説",
+  "targetFolder": "📋Languages/JavaScript-TS/実例01",
+  "numberFormat": "1",
+  "padWidth": 2
 }

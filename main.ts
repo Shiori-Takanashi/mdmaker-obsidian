@@ -133,14 +133,17 @@ export default class MDMakerPlugin extends Plugin {
     async createFiles(
         folder: TFolder,
         baseName: string,
-        count: number
+        count: number,
+        numberFormat?: string,
+        padWidth?: number
     ): Promise<{ created: string[]; failed: string[] }> {
-        const { numberFormat: rawFormat, padWidth } = this.settings;
+        const rawFormat = numberFormat || this.settings.numberFormat;
+        const padding = padWidth !== undefined ? padWidth : this.settings.padWidth;
         const created: string[] = [];
         const failed: string[] = [];
 
         for (let i = 1; i <= count; i++) {
-            const segment = this.formatSegment(rawFormat, padWidth, i);
+            const segment = this.formatSegment(rawFormat, padding, i);
             const fileName = `${baseName}${segment}.md`;
             const filePath = folder.path === '/' ? fileName : `${folder.path}/${fileName}`;
 
@@ -274,9 +277,6 @@ class MDMakerModal extends Modal {
             cls: 'mdmaker-create-button'
         });
         createButton.addEventListener('click', async () => {
-            this.plugin.settings.numberFormat = this.numberFormat;
-            this.plugin.settings.padWidth = this.padWidth;
-            await this.plugin.saveSettings();
             await this.executeCreate();
         });
 
@@ -318,10 +318,18 @@ class MDMakerModal extends Modal {
         }
 
         try {
+            // モーダルの現在の値を設定に保存
+            this.plugin.settings.numberFormat = this.numberFormat;
+            this.plugin.settings.padWidth = this.padWidth;
+            await this.plugin.saveSettings();
+
+            // 現在のモーダルの値を直接渡す
             const { created, failed } = await this.plugin.createFiles(
                 this.selectedFolder,
                 this.baseName.trim(),
-                this.fileCount
+                this.fileCount,
+                this.numberFormat,
+                this.padWidth
             );
 
             if (created.length) {
